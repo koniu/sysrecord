@@ -1,0 +1,57 @@
+# Example ~/.asoundrc using snd-aloop module for a monitor interface and
+# recording system sound.
+
+# See:
+# https://trac.ffmpeg.org/wiki/Capture/ALSA
+# https://bbs.archlinux.org/viewtopic.php?id=147852
+
+pcm.!default {
+  type asym
+  playback.pcm "Tee"
+  capture.pcm "looprec"
+}
+
+pcm.looprec {
+    type hw
+    card "Loopback"
+    device 1
+    subdevice 0
+}
+
+pcm.Tee {
+  type plug
+  slave.pcm mdev
+  route_policy "duplicate"
+}
+
+pcm.mdev {
+  type multi
+  slaves.a.pcm pcm.MixHw
+  slaves.a.channels 2
+  slaves.b.pcm pcm.MixLoopback
+  slaves.b.channels 2
+  bindings.0.slave a
+  bindings.0.channel 0
+  bindings.1.slave a
+  bindings.1.channel 1
+  bindings.2.slave b
+  bindings.2.channel 0
+  bindings.3.slave b
+  bindings.3.channel 1
+}
+
+pcm.MixHw {
+  type dmix
+  ipc_key 1024
+  slave {
+    pcm "hw:0,0"
+  }
+}
+
+pcm.MixLoopback {
+  type dmix
+  ipc_key 1025
+  slave {
+    pcm "hw:Loopback,0,0"
+  }
+}

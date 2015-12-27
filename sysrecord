@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# sysrecord - a script for recording system sound with alsa, jack or pa
+# author <koniu@riseup.net>
+
+
+# config
+OUTPUT_DIR=~/Audio/Recordings
+OUTPUT_FMT="+rec-%Y%m%d-%H%M%S.wav"
+OSD_OPTS="-A center -f lucidasans-bold-12 -o 4 -i 100 -d0"
+
+
+# test if a sound daemon is running
+AUDIO="alsa"
+jack_control status &> /dev/null && AUDIO="jack"
+pactl info &> /dev/null && AUDIO="pa"
+
+# set up recorder
+case $AUDIO in
+    alsa)
+        RECORDER="arecord"
+        RECORDER_OPTS="-fcd -q"
+        ;;
+    jack)
+        RECORDER="jack_capture"
+        RECORDER_OPTS="--no-stdin -as"
+        ;;
+    pa)
+        PA_MONITOR=`pactl list short sources | grep monitor | head -n1 | cut -f2`
+        RECORDER="parecord"
+        RECORDER_OPTS="--latency-msec 1 -r -d $PA_MONITOR"
+        ;;
+esac
+
+# test if recorder is running
+pids=`pgrep $RECORDER`
+
+if [ -z $pids  ]; then
+# recorder not running > start recording
+
+    # create output dir if not existent
+    eval [ ! -d $OUTPUT_DIR ] && mkdir -p $OUTPUT_DIR
+
+    # set output file
+    eval OUTPUT=$OUTPUT_DIR/`date $OUTPUT_FMT`
+
+    # output notification
+    eval notify-send -i gtk-media-record "Recording" "`basename $OUTPUT`"
+
+    # output osd
+    echo '< rec >' | eval osd_cat $OSD_OPTS &
+
+    # run recorder
+    eval exec $RECORDER $RECORDER_OPTS $OUTPUT &
+
+else
+# recorder is running > stop recording
+
+    # find output file
+    output_file=`cat /proc/$pids/cmdline | xargs -0 | grep -oE "[^ ]+$"`
+
+    # send kill signal to recorder
+    kill "$pids"
+
+    # kill osd
+    pkill osd_cat
+
+    # wait for the recorder to write out
+    while ps -hp $pids &> /dev/null; do sleep 1; done
+
+    # gather stats
+    output_size=`du -hs $output_file | cut -f1`
+    output_duration=`soxi -d $output_file`
+
+    # format stats
+    if [ "$output_duration" ]; then
+        stats="   |   $output_duration   |   $output_size"
+    else
+        stats="   |   $output_size"
+    fi
+
+    # output summary notification with stats
+    notify-send -i gtk-media-stop "Recorded" "`basename $output_file`$stats"
+
+fi
